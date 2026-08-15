@@ -300,7 +300,7 @@ abstract class TheYiffGallery : KeiSource() {
             ?.getOrNull(1)
             ?.toIntOrNull()
     }
-    private val categoryIdRegex= Regex("""category/(\d+)""")
+    private val categoryIdRegex = Regex("""category/(\d+)""")
 }
 
 private data class PiwigoCategory(
