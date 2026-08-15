@@ -32,7 +32,7 @@ abstract class TheyYiffGallery : KeiSource() {
     override suspend fun getPopularManga(page: Int): MangasPage {
         val years = client.get(comicsRootUrl()).use { response ->
             response.asJsoup()
-                .select("a[href*="index?/category/"] img.category.thumbnail")
+                .select("""a[href*="index?/category/"] img.category.thumbnail""")
                 .mapNotNull { image ->
                     val year = image.attr("alt").trim().toIntOrNull()
                         ?: image.attr("title").trim().toIntOrNull()
@@ -69,7 +69,7 @@ abstract class TheyYiffGallery : KeiSource() {
         document: org.jsoup.nodes.Document,
     ): List<SManga> =
         document
-            .select("a[href*="index?/category/"] img.category.thumbnail")
+            .select("""a[href*="index?/category/"] img.category.thumbnail""")
             .mapNotNull { image ->
                 val href = image.parent()?.absUrl("href").orEmpty()
                 val title = image.attr("alt")
@@ -104,7 +104,7 @@ abstract class TheyYiffGallery : KeiSource() {
             "$baseUrl/qsearch.php?q=${query.encodeUrlParameter()}",
         ).use { response ->
             response.asJsoup()
-                .select("a[href*="index?/category/"]")
+                .select("""a[href*="index?/category/"]""")
                 .mapNotNull { link ->
                     val href = link.absUrl("href")
                     val title = link.text().trim()
@@ -188,7 +188,7 @@ abstract class TheyYiffGallery : KeiSource() {
 
         if (
             document.select(
-                "a[href*="picture?"] img.thumbnail:not(.category)",
+                """a[href*="picture?"] img.thumbnail:not(.category)""",
             ).isNotEmpty()
         ) {
             result += SChapter.create().apply {
@@ -199,7 +199,7 @@ abstract class TheyYiffGallery : KeiSource() {
         }
 
         document
-            .select("a[href*="index?/category/"] img.category.thumbnail")
+            .select("""a[href*="index?/category/"] img.category.thumbnail""")
             .forEach { image ->
                 val href = image.parent()?.absUrl("href").orEmpty()
                 if (href.isBlank()) return@forEach
@@ -233,7 +233,7 @@ abstract class TheyYiffGallery : KeiSource() {
             val document = response.asJsoup()
 
             val pictureUrls = document
-                .select("a[href*="picture?"]")
+                .select("""a[href*="picture?"]""")
                 .mapNotNull { it.absUrl("href").takeIf(String::isNotBlank) }
                 .distinct()
 
@@ -250,6 +250,13 @@ abstract class TheyYiffGallery : KeiSource() {
                         Page(index, imageUrl = imageUrl)
                     }
                 }.getOrNull()
+            }
+        }
+    }
+
+    private fun String.encodeUrlParameter(): String =
+        java.net.URLEncoder.encode(this, Charsets.UTF_8.name())
+}
             }
         }
     }
