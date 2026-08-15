@@ -12,13 +12,11 @@ import okhttp3.Headers
 import okhttp3.Request
 import okhttp3.Response
 import java.net.URLEncoder
+import keiyoushi.annotation.Source
+import keiyoushi.source.KeiSource
 
-class ComicsSiteExample : HttpSource() {
-
-    override val name = "TheyYiffGallery"
-    override val baseUrl = "https://theyiffgallery.com"
-    override val lang = "en"
-    override val supportsLatest = false
+@Source
+abstract class ComicsSiteExample : KeiSource() {
 
     override fun headersBuilder(): Headers.Builder = super.headersBuilder()
         .add("Referer", "$baseUrl/")
@@ -31,6 +29,21 @@ class ComicsSiteExample : HttpSource() {
     private val yearCategories = linkedMapOf(
         2026 to 9708,
         2025 to 9268,
+        2024 to 8771,
+        2023 to 8131,
+        2022 to 7556,
+        2021 to 7093,
+        2020 to 6433,
+        2019 to 5810,
+        2018 to 5136,
+        2017 to 4378,
+        2016 to 3618,
+        2015 to 2415,
+        2014 to 2579,
+        2013 to 2291,
+        2012 to 1662,
+        2011 to 1780,
+        2010 to 2119,
     )
 
     // ---------------------------------------------------------------
