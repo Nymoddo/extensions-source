@@ -55,7 +55,7 @@ abstract class TheYiffGallery : KeiSource() {
 
         val manga = SManga.create().apply {
             url = "/index?/category/9980"
-            title = "The Recital [V10]"
+            title = "The Recital [V11 URL PROBE]"
         }
 
         return MangasPage(listOf(manga), false)
@@ -163,11 +163,22 @@ abstract class TheYiffGallery : KeiSource() {
         fetchDetails: Boolean,
         fetchChapters: Boolean,
     ): SMangaUpdate {
+        val document = fetchCategoryDocument(9980)
+        val pictureLinks = document.select("""a[href*="picture?"]""").size
+        val thumbnails = document.select("img.thumbnail:not(.category)").size
+        val pageTitle = document.title().ifBlank { "NO TITLE" }
+
         manga.status = SManga.UNKNOWN
+        manga.description = buildString {
+            append("V11 diagnostic\n")
+            append("Title: $pageTitle\n")
+            append("Picture links: $pictureLinks\n")
+            append("Image thumbnails: $thumbnails")
+        }
 
         val diagnosticChapter = SChapter.create().apply {
-            url = "/index?%2Fcategory%2F9980=#v10"
-            name = "Principal [V10 CANONICAL URL]"
+            url = "/index?/category/9980#v11"
+            name = "Principal [V11] pics=$pictureLinks thumbs=$thumbnails"
             chapter_number = 0f
         }
 
@@ -219,11 +230,11 @@ abstract class TheYiffGallery : KeiSource() {
     // pages. Each picture? page contains #theMainImage.
     // ---------------------------------------------------------------
 
-    override suspend fun getPageList(chapter: SChapter): List<Page> = client.get(
-        "$baseUrl/index?%2Fcategory%2F9980=",
-    ).use { response ->
-        response.asJsoup()
-            .select("""a[href^="picture?"] img.thumbnail, a[href*="picture?"] img.thumbnail""")
+    override suspend fun getPageList(chapter: SChapter): List<Page> {
+        val document = fetchCategoryDocument(9980)
+
+        return document
+            .select("img.thumbnail:not(.category)")
             .mapIndexedNotNull { index, image ->
                 val thumbnailUrl = image.absUrl("src")
                 if (thumbnailUrl.isBlank()) return@mapIndexedNotNull null
@@ -235,6 +246,28 @@ abstract class TheYiffGallery : KeiSource() {
 
                 Page(index, imageUrl = imageUrl)
             }
+    }
+
+    private suspend fun fetchCategoryDocument(categoryId: Int): org.jsoup.nodes.Document {
+        val urls = listOf(
+            "$baseUrl/index?/category/$categoryId",
+            "$baseUrl/index?%2Fcategory%2F$categoryId=",
+            "$baseUrl/index.php?/category/$categoryId",
+        )
+
+        return urls
+            .mapNotNull { url ->
+                runCatching {
+                    client.get(url).use { response ->
+                        response.asJsoup()
+                    }
+                }.getOrNull()
+            }
+            .maxByOrNull { document ->
+                document.select("""a[href*="picture?"]""").size * 10 +
+                    document.select("img.thumbnail:not(.category)").size
+            }
+            ?: org.jsoup.nodes.Document(baseUrl)
     }
 
     private fun String.encodeUrlParameter(): String = java.net.URLEncoder.encode(this, Charsets.UTF_8.name())
