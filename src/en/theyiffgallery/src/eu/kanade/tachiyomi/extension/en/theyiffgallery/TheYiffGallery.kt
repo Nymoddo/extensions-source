@@ -55,7 +55,7 @@ abstract class TheYiffGallery : KeiSource() {
 
         val manga = SManga.create().apply {
             url = "/index?/category/9980"
-            title = "The Recital"
+            title = "The Recital [V8]"
         }
 
         return MangasPage(listOf(manga), false)
@@ -166,8 +166,8 @@ abstract class TheYiffGallery : KeiSource() {
         manga.status = SManga.UNKNOWN
 
         val diagnosticChapter = SChapter.create().apply {
-            url = "/index?/category/9980"
-            name = "Principal [DIAGNOSTIC]"
+            url = "/index?/category/9980#v8"
+            name = "Principal [V8 DYNAMIC]"
             chapter_number = 0f
         }
 
