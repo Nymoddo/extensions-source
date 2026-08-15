@@ -295,12 +295,12 @@ abstract class TheYiffGallery : KeiSource() {
             java.net.URLDecoder.decode(this, Charsets.UTF_8.name())
         }.getOrDefault(this)
 
-        return CATEGORY_ID_REGEX.find(decoded)
+        return categoryIdRegex.find(decoded)
             ?.groupValues
             ?.getOrNull(1)
             ?.toIntOrNull()
     }
-    private val CATEGORY_ID_REGEX = Regex("""category/(\d+)""")
+    private val categoryIdRegex= Regex("""category/(\d+)""")
 }
 
 private data class PiwigoCategory(
