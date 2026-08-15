@@ -10,7 +10,12 @@ import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.annotation.Source
 import keiyoushi.network.get
 import keiyoushi.source.KeiSource
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
@@ -55,7 +60,7 @@ abstract class TheYiffGallery : KeiSource() {
 
         val manga = SManga.create().apply {
             url = "/index?/category/9980"
-            title = "The Recital [V11 URL PROBE]"
+            title = "The Recital [V12 PIWIGO API]"
         }
 
         return MangasPage(listOf(manga), false)
@@ -163,22 +168,14 @@ abstract class TheYiffGallery : KeiSource() {
         fetchDetails: Boolean,
         fetchChapters: Boolean,
     ): SMangaUpdate {
-        val document = fetchCategoryDocument(9980)
-        val pictureLinks = document.select("""a[href*="picture?"]""").size
-        val thumbnails = document.select("img.thumbnail:not(.category)").size
-        val pageTitle = document.title().ifBlank { "NO TITLE" }
+        val imageUrls = getCategoryImageUrls(9980)
 
         manga.status = SManga.UNKNOWN
-        manga.description = buildString {
-            append("V11 diagnostic\n")
-            append("Title: $pageTitle\n")
-            append("Picture links: $pictureLinks\n")
-            append("Image thumbnails: $thumbnails")
-        }
+        manga.description = "V12 Piwigo API diagnostic\nImages: ${imageUrls.size}"
 
         val diagnosticChapter = SChapter.create().apply {
-            url = "/index?/category/9980#v11"
-            name = "Principal [V11] pics=$pictureLinks thumbs=$thumbnails"
+            url = "/index?/category/9980#v12"
+            name = "Principal [V12 API] images=${imageUrls.size}"
             chapter_number = 0f
         }
 
@@ -230,44 +227,36 @@ abstract class TheYiffGallery : KeiSource() {
     // pages. Each picture? page contains #theMainImage.
     // ---------------------------------------------------------------
 
-    override suspend fun getPageList(chapter: SChapter): List<Page> {
-        val document = fetchCategoryDocument(9980)
+    override suspend fun getPageList(chapter: SChapter): List<Page> =
+        getCategoryImageUrls(9980).mapIndexed { index, imageUrl ->
+            Page(index, imageUrl = imageUrl)
+        }
 
-        return document
-            .select("img.thumbnail:not(.category)")
-            .mapIndexedNotNull { index, image ->
-                val thumbnailUrl = image.absUrl("src")
-                if (thumbnailUrl.isBlank()) return@mapIndexedNotNull null
+    private suspend fun getCategoryImageUrls(categoryId: Int): List<String> {
+        val url = "$baseUrl/ws.php?format=json&method=pwg.categories.getImages&cat_id=$categoryId&per_page=500&page=0"
 
-                val imageUrl = thumbnailUrl.replace(
-                    Regex("""-cu_[^.]+(?=\.[^.]+$)"""),
-                    "-xx",
-                )
+        return client.get(url).use { response ->
+            val root = Json.parseToJsonElement(response.body.string()).jsonObject
+            val result = root["result"]?.jsonObject ?: return@use emptyList()
+            val images = result["images"]?.jsonArray ?: return@use emptyList()
 
-                Page(index, imageUrl = imageUrl)
+            images.mapNotNull { imageElement ->
+                val image = imageElement.jsonObject
+
+                image["element_url"]
+                    ?.jsonPrimitive
+                    ?.contentOrNull
+                    ?.takeIf { it.isNotBlank() }
+                    ?: image["derivatives"]
+                        ?.jsonObject
+                        ?.get("xxlarge")
+                        ?.jsonObject
+                        ?.get("url")
+                        ?.jsonPrimitive
+                        ?.contentOrNull
+                        ?.takeIf { it.isNotBlank() }
             }
-    }
-
-    private suspend fun fetchCategoryDocument(categoryId: Int): org.jsoup.nodes.Document {
-        val urls = listOf(
-            "$baseUrl/index?/category/$categoryId",
-            "$baseUrl/index?%2Fcategory%2F$categoryId=",
-            "$baseUrl/index.php?/category/$categoryId",
-        )
-
-        return urls
-            .mapNotNull { url ->
-                runCatching {
-                    client.get(url).use { response ->
-                        response.asJsoup()
-                    }
-                }.getOrNull()
-            }
-            .maxByOrNull { document ->
-                document.select("""a[href*="picture?"]""").size * 10 +
-                    document.select("img.thumbnail:not(.category)").size
-            }
-            ?: org.jsoup.nodes.Document(baseUrl)
+        }
     }
 
     private fun String.encodeUrlParameter(): String = java.net.URLEncoder.encode(this, Charsets.UTF_8.name())
