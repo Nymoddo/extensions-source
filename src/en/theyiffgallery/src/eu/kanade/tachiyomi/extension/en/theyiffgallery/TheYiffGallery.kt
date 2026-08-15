@@ -228,8 +228,8 @@ abstract class TheYiffGallery : KeiSource() {
     // ---------------------------------------------------------------
 
     override suspend fun getPageList(chapter: SChapter): List<Page> = getCategoryImageUrls(9980).mapIndexed { index, imageUrl ->
-            Page(index, imageUrl = imageUrl)
-        }
+        Page(index, imageUrl = imageUrl)
+    }
 
     private suspend fun getCategoryImageUrls(categoryId: Int): List<String> {
         val url = "$baseUrl/ws.php?format=json&method=pwg.categories.getImages&cat_id=$categoryId&per_page=500&page=0"
