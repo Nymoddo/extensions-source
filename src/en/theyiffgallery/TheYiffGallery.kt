@@ -1,226 +1,259 @@
-package eu.kanade.tachiyomi.extension.all.theyiffgallery
+package eu.kanade.tachiyomi.extension.en.theyiffgallery
 
-import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.network.asJsoup
-import eu.kanade.tachiyomi.source.HttpSource
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
-import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
-import okhttp3.Headers
-import okhttp3.Request
-import okhttp3.Response
-import java.net.URLEncoder
+import eu.kanade.tachiyomi.source.model.SChapter
+import eu.kanade.tachiyomi.source.model.SMangaUpdate
+import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.annotation.Source
+import keiyoushi.network.get
 import keiyoushi.source.KeiSource
+import kotlinx.serialization.json.JsonElement
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrl
 
 @Source
-abstract class ComicsSiteExample : KeiSource() {
+abstract class TheyYiffGallery : KeiSource() {
 
-    override fun headersBuilder(): Headers.Builder = super.headersBuilder()
-        .add("Referer", "$baseUrl/")
-
-    // Root of the actual Comics section.
     private val comicsCategoryId = 1661
 
-    // Known year categories from the site.
-    // Add the remaining years here as they are collected.
-    private val yearCategories = linkedMapOf(
-        2026 to 9708,
-        2025 to 9268,
-        2024 to 8771,
-        2023 to 8131,
-        2022 to 7556,
-        2021 to 7093,
-        2020 to 6433,
-        2019 to 5810,
-        2018 to 5136,
-        2017 to 4378,
-        2016 to 3618,
-        2015 to 2415,
-        2014 to 2579,
-        2013 to 2291,
-        2012 to 1662,
-        2011 to 1780,
-        2010 to 2119,
-    )
+    override val supportsLatest = false
 
     // ---------------------------------------------------------------
     // BROWSE
+    //
+    // /index?/category/1661 contains the year categories.
+    // We discover the year IDs from the root page instead of hardcoding
+    // them, so adding a new year does not require a source update.
     // ---------------------------------------------------------------
 
-    override fun popularMangaRequest(page: Int): Request {
-        val year = yearCategories.keys.elementAtOrNull(page - 1)
-            ?: yearCategories.keys.last()
-        val categoryId = yearCategories[year]!!
+    override suspend fun getPopularManga(page: Int): MangasPage {
+        val years = client.get(comicsRootUrl()).use { response ->
+            response.asJsoup()
+                .select("a[href*="index?/category/"] img.category.thumbnail")
+                .mapNotNull { image ->
+                    val year = image.attr("alt").trim().toIntOrNull()
+                        ?: image.attr("title").trim().toIntOrNull()
+                        ?: return@mapNotNull null
 
-        return GET("$baseUrl/index?/category/$categoryId", headers)
-    }
+                    if (year !in 2010..2100) return@mapNotNull null
 
-    override fun popularMangaParse(response: Response): MangasPage {
-        val document = response.asJsoup()
+                    val href = image.parent()?.absUrl("href").orEmpty()
+                    if (href.isBlank()) return@mapNotNull null
 
-        val mangas = document
-            .select("a[href*=index?\\/category\\/] img.category.thumbnail")
-            .mapNotNull { image ->
-                val link = image.parent() ?: return@mapNotNull null
-                val href = link.absUrl("href")
-                if (href.isBlank()) return@mapNotNull null
-
-                SManga.create().apply {
-                    setUrlWithoutDomain(href)
-                    title = image.attr("alt").ifBlank { image.attr("title") }
-                    thumbnail_url = image.absUrl("src")
+                    year to href
                 }
-            }
+                .distinctBy { it.first }
+                .sortedByDescending { it.first }
+        }
 
-        // One year per Mihon page.
-        val hasNextPage = yearCategories.keys.elementAtOrNull(
-            yearCategories.keys.indexOfFirst { year ->
-                response.request.url.toString().contains("${yearCategories[year]}")
-            } + 1,
-        ) != null
+        val yearEntry = years.getOrNull(page - 1)
+            ?: return MangasPage(emptyList(), false)
 
-        return MangasPage(mangas, hasNextPage)
-    }
+        val mangas = client.get(yearEntry.second).use { response ->
+            parseCategoryChildren(response.asJsoup())
+        }
 
-    // ---------------------------------------------------------------
-    // SEARCH
-    // ---------------------------------------------------------------
-
-    override fun searchMangaRequest(
-        page: Int,
-        query: String,
-        filters: FilterList,
-    ): Request {
-        return GET(
-            "$baseUrl/qsearch.php?q=${URLEncoder.encode(query, "UTF-8")}",
-            headers,
+        return MangasPage(
+            mangas = mangas,
+            hasNextPage = page < years.size,
         )
     }
 
-    override fun searchMangaParse(response: Response): MangasPage {
-        val document = response.asJsoup()
+    private fun comicsRootUrl(): String =
+        "$baseUrl/index?/category/$comicsCategoryId"
 
-        val mangas = document
-            .select("a[href*=index?\\/category\\/]")
-            .mapNotNull { link ->
-                val href = link.absUrl("href")
-                val title = link.text().trim()
+    private fun parseCategoryChildren(
+        document: org.jsoup.nodes.Document,
+    ): List<SManga> =
+        document
+            .select("a[href*="index?/category/"] img.category.thumbnail")
+            .mapNotNull { image ->
+                val href = image.parent()?.absUrl("href").orEmpty()
+                val title = image.attr("alt")
+                    .ifBlank { image.attr("title") }
+                    .trim()
 
-                if (href.isBlank() || title.isBlank()) {
-                    return@mapNotNull null
-                }
+                if (href.isBlank() || title.isBlank()) return@mapNotNull null
 
                 SManga.create().apply {
                     setUrlWithoutDomain(href)
                     this.title = title
+                    thumbnail_url = image.absUrl("src")
                 }
             }
             .distinctBy { it.url }
 
+    // ---------------------------------------------------------------
+    // SEARCH
+    //
+    // The site's quick-search endpoint is qsearch.php?q=...
+    // Its autocomplete results point directly to /index?/category/ID.
+    // ---------------------------------------------------------------
+
+    override suspend fun getSearchMangaList(
+        page: Int,
+        query: String,
+        filters: FilterList,
+    ): MangasPage {
+        if (query.isBlank()) return MangasPage(emptyList(), false)
+
+        val mangas = client.get(
+            "$baseUrl/qsearch.php?q=${query.encodeUrlParameter()}",
+        ).use { response ->
+            response.asJsoup()
+                .select("a[href*="index?/category/"]")
+                .mapNotNull { link ->
+                    val href = link.absUrl("href")
+                    val title = link.text().trim()
+
+                    if (href.isBlank() || title.isBlank()) return@mapNotNull null
+
+                    SManga.create().apply {
+                        setUrlWithoutDomain(href)
+                        this.title = title
+                    }
+                }
+                .distinctBy { it.url }
+        }
+
         return MangasPage(mangas, false)
     }
 
-    override fun getFilterList(): FilterList = FilterList()
+    override fun getFilterList(data: JsonElement?): FilterList = FilterList()
 
     // ---------------------------------------------------------------
-    // MANGA DETAILS
+    // URL SEARCH / DEEPLINKS
     // ---------------------------------------------------------------
 
-    override fun mangaDetailsParse(response: Response): SManga {
-        val document = response.asJsoup()
-        val categoryImage = document.selectFirst("img.category.thumbnail")
+    override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
+        if (url.host != baseUrl.toHttpUrl().host) return null
+        if (url.encodedPath != "/index") return null
+
+        val query = url.encodedQuery ?: return null
+        if (!query.startsWith("/category/")) return null
 
         return SManga.create().apply {
-            title = categoryImage?.attr("alt")
-                ?.ifBlank { categoryImage.attr("title") }
-                ?: document.selectFirst("title")?.text()
-                ?: "Unknown"
-
-            thumbnail_url = categoryImage?.absUrl("src")
-            status = SManga.UNKNOWN
+            this.url = "/index?$query"
+            title = "Unknown"
         }
     }
 
     // ---------------------------------------------------------------
-    // CHAPTERS
+    // DETAILS + CHAPTERS
+    //
+    // A comic itself is a category.
+    // Direct images = virtual "Principal" chapter.
+    // Nested categories = separate chapters.
     // ---------------------------------------------------------------
 
-    override fun chapterListParse(response: Response): List<SChapter> {
-        val document = response.asJsoup()
-        val chapters = mutableListOf<SChapter>()
+    override suspend fun fetchMangaUpdate(
+        manga: SManga,
+        chapters: List<SChapter>,
+        fetchDetails: Boolean,
+        fetchChapters: Boolean,
+    ): SMangaUpdate {
+        client.get(getMangaUrl(manga)).use { response ->
+            val document = response.asJsoup()
 
-        // Images directly inside the comic become one virtual chapter.
-        val hasDirectImages = document
-            .select("a[href*=picture?] img.thumbnail:not(.category)")
-            .isNotEmpty()
+            // Keep title/thumbnail from the browse/search result.
+            // Child category thumbnails are not necessarily the comic cover.
+            if (fetchDetails && manga.title.isBlank()) {
+                manga.title = document.selectFirst("title")
+                    ?.text()
+                    ?.substringBefore(" - ")
+                    ?.trim()
+                    .orEmpty()
+            }
 
-        if (hasDirectImages) {
-            chapters += SChapter.create().apply {
-                setUrlWithoutDomain(response.request.url.toString())
+            manga.status = SManga.UNKNOWN
+
+            val updatedChapters = if (fetchChapters || fetchDetails) {
+                parseChapters(document, manga.url)
+            } else {
+                chapters
+            }
+
+            return SMangaUpdate(manga, updatedChapters)
+        }
+    }
+
+    private fun parseChapters(
+        document: org.jsoup.nodes.Document,
+        mangaUrl: String,
+    ): List<SChapter> {
+        val result = mutableListOf<SChapter>()
+
+        if (
+            document.select(
+                "a[href*="picture?"] img.thumbnail:not(.category)",
+            ).isNotEmpty()
+        ) {
+            result += SChapter.create().apply {
+                url = mangaUrl
                 name = "Principal"
                 chapter_number = 0f
             }
         }
 
-        // Nested categories become their own chapters.
         document
-            .select("a[href*=index?\\/category\\/] img.category.thumbnail")
+            .select("a[href*="index?/category/"] img.category.thumbnail")
             .forEach { image ->
-                val link = image.parent() ?: return@forEach
-                val href = link.absUrl("href")
+                val href = image.parent()?.absUrl("href").orEmpty()
                 if (href.isBlank()) return@forEach
 
                 val name = image.attr("alt")
                     .ifBlank { image.attr("title") }
+                    .trim()
                     .ifBlank { "Subcategory" }
 
-                chapters += SChapter.create().apply {
+                result += SChapter.create().apply {
                     setUrlWithoutDomain(href)
                     this.name = name
-                    chapter_number = chapters.size.toFloat() + 1f
+                    chapter_number = result.size.toFloat()
                 }
             }
 
-        return chapters.reversed()
+        return result.reversed()
     }
 
     // ---------------------------------------------------------------
     // PAGES
+    //
+    // A chapter URL is a category. Its thumbnails point to picture?
+    // pages. Each picture? page contains #theMainImage.
     // ---------------------------------------------------------------
 
-    override fun pageListParse(response: Response): List<Page> {
-        val document = response.asJsoup()
+    override suspend fun getPageList(chapter: SChapter): List<Page> {
+        val chapterUrl = getChapterUrl(chapter)
 
-        // A chapter URL points to a category. Each image thumbnail links to
-        // a picture page, which contains the actual image as #theMainImage.
-        val pictureUrls = document
-            .select("a[href*=picture?]")
-            .mapNotNull { it.absUrl("href").takeIf(String::isNotBlank) }
-            .distinct()
+        return client.get(chapterUrl).use { response ->
+            val document = response.asJsoup()
 
-        return pictureUrls.mapIndexedNotNull { index, pictureUrl ->
-            val pictureResponse = try {
-                client.newCall(GET(pictureUrl, headers)).execute()
-            } catch (_: Exception) {
-                return@mapIndexedNotNull null
-            }
+            val pictureUrls = document
+                .select("a[href*="picture?"]")
+                .mapNotNull { it.absUrl("href").takeIf(String::isNotBlank) }
+                .distinct()
 
-            pictureResponse.use { result ->
-                val pictureDocument = result.asJsoup()
-                val image = pictureDocument.selectFirst("#theMainImage")
-                    ?: return@mapIndexedNotNull null
+            pictureUrls.mapIndexedNotNull { index, pictureUrl ->
+                runCatching {
+                    client.get(pictureUrl).use { pictureResponse ->
+                        val pictureDocument = pictureResponse.asJsoup()
+                        val image = pictureDocument.selectFirst("#theMainImage")
+                            ?: return@use null
 
-                val imageUrl = image.absUrl("src")
-                if (imageUrl.isBlank()) return@mapIndexedNotNull null
+                        val imageUrl = image.absUrl("src")
+                        if (imageUrl.isBlank()) return@use null
 
-                Page(index, imageUrl = imageUrl)
+                        Page(index, imageUrl = imageUrl)
+                    }
+                }.getOrNull()
             }
         }
     }
 
-    override fun imageUrlParse(response: Response): String =
-        throw UnsupportedOperationException()
+    private fun String.encodeUrlParameter(): String =
+        java.net.URLEncoder.encode(this, Charsets.UTF_8.name())
 }
