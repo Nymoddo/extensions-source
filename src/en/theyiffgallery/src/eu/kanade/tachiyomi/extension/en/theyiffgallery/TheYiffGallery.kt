@@ -219,22 +219,21 @@ abstract class TheYiffGallery : KeiSource() {
     // pages. Each picture? page contains #theMainImage.
     // ---------------------------------------------------------------
 
-    override suspend fun getPageList(chapter: SChapter): List<Page> =
-        client.get(getChapterUrl(chapter)).use { response ->
-            response.asJsoup()
-                .select("img.thumbnail:not(.category)")
-                .mapIndexedNotNull { index, image ->
-                    val thumbnailUrl = image.absUrl("src")
-                    if (thumbnailUrl.isBlank()) return@mapIndexedNotNull null
+    override suspend fun getPageList(chapter: SChapter): List<Page> = client.get(getChapterUrl(chapter)).use { response ->
+        response.asJsoup()
+            .select("img.thumbnail:not(.category)")
+            .mapIndexedNotNull { index, image ->
+                val thumbnailUrl = image.absUrl("src")
+                if (thumbnailUrl.isBlank()) return@mapIndexedNotNull null
 
-                    val imageUrl = thumbnailUrl.replace(
-                        Regex("""-cu_[^.]+(?=\.[^.]+$)"""),
-                        "-xx",
-                    )
+                val imageUrl = thumbnailUrl.replace(
+                    Regex("""-cu_[^.]+(?=\.[^.]+$)"""),
+                    "-xx",
+                )
 
-                    Page(index, imageUrl = imageUrl)
-                }
-        }
+                Page(index, imageUrl = imageUrl)
+            }
+    }
 
     private fun String.encodeUrlParameter(): String = java.net.URLEncoder.encode(this, Charsets.UTF_8.name())
 }
