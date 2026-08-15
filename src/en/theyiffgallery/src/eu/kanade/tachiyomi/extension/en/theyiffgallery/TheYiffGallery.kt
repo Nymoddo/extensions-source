@@ -214,14 +214,17 @@ abstract class TheYiffGallery : KeiSource() {
     private suspend fun getCategories(categoryId: Int): List<PiwigoCategory> {
         val url = apiUrl(
             method = "pwg.categories.getList",
-            extra = "&cat_id=$categoryId&recursive=true&thumbnail_size=medium",
+            extra = "&cat_id=$categoryId&recursive=true",
         )
 
         return client.get(url).use { response ->
             val root = Json.parseToJsonElement(response.body.string()).jsonObject
             val result = root["result"] ?: return@use emptyList()
-            val categories = result.jsonObject["categories"]?.jsonArray
-                ?: return@use emptyList()
+            val categories = runCatching {
+                result.jsonObject["categories"]?.jsonArray
+            }.getOrNull() ?: runCatching {
+                result.jsonArray
+            }.getOrNull() ?: return@use emptyList()
 
             categories.mapNotNull { element ->
                 val category = element.jsonObject
@@ -297,9 +300,8 @@ abstract class TheYiffGallery : KeiSource() {
             ?.getOrNull(1)
             ?.toIntOrNull()
     }
+    private val CATEGORY_ID_REGEX = Regex("""category/(\d+)""")
 }
-
-private val CATEGORY_ID_REGEX = Regex("""category/(\d+)""")
 
 private data class PiwigoCategory(
     val id: Int,
