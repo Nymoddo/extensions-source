@@ -55,7 +55,7 @@ abstract class TheYiffGallery : KeiSource() {
 
         val manga = SManga.create().apply {
             url = "/index?/category/9980"
-            title = "The Recital [V9]"
+            title = "The Recital [V10]"
         }
 
         return MangasPage(listOf(manga), false)
@@ -166,8 +166,8 @@ abstract class TheYiffGallery : KeiSource() {
         manga.status = SManga.UNKNOWN
 
         val diagnosticChapter = SChapter.create().apply {
-            url = "/index?/category/9980#v9"
-            name = "Principal [V9 THUMBNAILS]"
+            url = "/index?%2Fcategory%2F9980=#v10"
+            name = "Principal [V10 CANONICAL URL]"
             chapter_number = 0f
         }
 
@@ -219,9 +219,11 @@ abstract class TheYiffGallery : KeiSource() {
     // pages. Each picture? page contains #theMainImage.
     // ---------------------------------------------------------------
 
-    override suspend fun getPageList(chapter: SChapter): List<Page> = client.get(getChapterUrl(chapter)).use { response ->
+    override suspend fun getPageList(chapter: SChapter): List<Page> = client.get(
+        "$baseUrl/index?%2Fcategory%2F9980=",
+    ).use { response ->
         response.asJsoup()
-            .select("img.thumbnail:not(.category)")
+            .select("""a[href^="picture?"] img.thumbnail, a[href*="picture?"] img.thumbnail""")
             .mapIndexedNotNull { index, image ->
                 val thumbnailUrl = image.absUrl("src")
                 if (thumbnailUrl.isBlank()) return@mapIndexedNotNull null
