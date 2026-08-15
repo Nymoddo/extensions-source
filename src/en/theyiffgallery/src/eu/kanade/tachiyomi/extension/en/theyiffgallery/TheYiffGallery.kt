@@ -299,14 +299,7 @@ abstract class TheYiffGallery : KeiSource() {
     }
 }
 
-private val CATEGORY_ID_REGEX = Regex("""category/(\d+)""")        2016 to 3618,
-        2015 to 2415,
-        2014 to 2579,
-        2013 to 2291,
-        2012 to 1662,
-        2011 to 1780,
-        2010 to 2119,
-    )
+private val CATEGORY_ID_REGEX = Regex("""category/(\d+)""")
 
 private data class PiwigoCategory(
     val id: Int,
