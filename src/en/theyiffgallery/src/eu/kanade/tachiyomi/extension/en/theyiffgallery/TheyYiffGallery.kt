@@ -257,10 +257,4 @@ abstract class TheyYiffGallery : KeiSource() {
     private fun String.encodeUrlParameter(): String =
         java.net.URLEncoder.encode(this, Charsets.UTF_8.name())
 }
-            }
-        }
-    }
 
-    private fun String.encodeUrlParameter(): String =
-        java.net.URLEncoder.encode(this, Charsets.UTF_8.name())
-}
