@@ -1,10 +1,20 @@
-ext {
-    extName = "The Yiff Gallery"
-    extClass = ".TheyYiffGallery"
-    extVersionCode = 1
-    isNsfw = true // true si el sitio es +18
+import io.github.keiyoushi.gradle.api.ContentWarning
+
+plugins {
+    alias(kei.plugins.extension)
 }
 
-metadata {
-    description = "Extension for the webpage The Yiff Gallery"
+keiyoushi {
+    // >>> CAMBIAR: nombre de tu extensión
+    name = "TheYiffGallery"
+    versionCode = 1
+    // >>> CAMBIAR: SAFE, MIXED o NSFW según el contenido del sitio
+    contentWarning = ContentWarning.NSFW
+    libVersion = "1.6"
+
+    source {
+        // >>> CAMBIAR: idioma y dominio del sitio
+        lang = "en"
+        baseUrl = "https://theyiffgallery.com"
+    }
 }
