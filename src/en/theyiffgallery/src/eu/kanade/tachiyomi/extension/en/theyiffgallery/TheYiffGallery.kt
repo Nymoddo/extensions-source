@@ -307,7 +307,7 @@ private val CATEGORY_ID_REGEX = Regex("""category/(\d+)""")        2016 to 3618,
         2011 to 1780,
         2010 to 2119,
     )
-    
+
 private data class PiwigoCategory(
     val id: Int,
     val name: String,
