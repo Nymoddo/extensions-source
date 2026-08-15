@@ -153,29 +153,15 @@ abstract class TheYiffGallery : KeiSource() {
         fetchDetails: Boolean,
         fetchChapters: Boolean,
     ): SMangaUpdate {
-        client.get(getMangaUrl(manga)).use { response ->
-            val document = response.asJsoup()
+        manga.status = SManga.UNKNOWN
 
-            // Keep title/thumbnail from the browse/search result.
-            // Child category thumbnails are not necessarily the comic cover.
-            if (fetchDetails && manga.title.isBlank()) {
-                manga.title = document.selectFirst("title")
-                    ?.text()
-                    ?.substringBefore(" - ")
-                    ?.trim()
-                    .orEmpty()
-            }
-
-            manga.status = SManga.UNKNOWN
-
-            val updatedChapters = if (fetchChapters || fetchDetails) {
-                parseChapters(document, manga.url)
-            } else {
-                chapters
-            }
-
-            return SMangaUpdate(manga, updatedChapters)
+        val diagnosticChapter = SChapter.create().apply {
+            url = "/index?/category/9980"
+            name = "Principal [DIAGNOSTIC]"
+            chapter_number = 0f
         }
+
+        return SMangaUpdate(manga, listOf(diagnosticChapter))
     }
 
     private fun parseChapters(
@@ -225,41 +211,13 @@ abstract class TheYiffGallery : KeiSource() {
     // pages. Each picture? page contains #theMainImage.
     // ---------------------------------------------------------------
 
-    override suspend fun getPageList(chapter: SChapter): List<Page> {
-        val chapterUrl = getChapterUrl(chapter)
-
-        return client.get(chapterUrl).use { response ->
-            val document = response.asJsoup()
-
-            val pictureUrls = document
-                .select("img.thumbnail:not(.category)")
-                .mapNotNull { image ->
-                    val link = image.parent()
-                    if (link?.tagName() != "a") return@mapNotNull null
-
-                    val href = link.attr("href").trim()
-                    if (!href.contains("picture?")) return@mapNotNull null
-
-                    if (href.startsWith("http")) href else "$baseUrl/${href.trimStart('/')}"
-                }
-                .distinct()
-
-            pictureUrls.mapIndexedNotNull { index, pictureUrl ->
-                runCatching {
-                    client.get(pictureUrl).use { pictureResponse ->
-                        val pictureDocument = pictureResponse.asJsoup()
-                        val image = pictureDocument.selectFirst("#theMainImage")
-                            ?: return@use null
-
-                        val imageUrl = image.absUrl("src")
-                        if (imageUrl.isBlank()) return@use null
-
-                        Page(index, imageUrl = imageUrl)
-                    }
-                }.getOrNull()
-            }
-        }
-    }
+    override suspend fun getPageList(chapter: SChapter): List<Page> =
+        listOf(
+            Page(
+                index = 0,
+                imageUrl = "$baseUrl/_data/i/upload/2015/07/30/20150730210107-4edfadaa-xx.png",
+            ),
+        )
 
     private fun String.encodeUrlParameter(): String = java.net.URLEncoder.encode(this, Charsets.UTF_8.name())
 }
