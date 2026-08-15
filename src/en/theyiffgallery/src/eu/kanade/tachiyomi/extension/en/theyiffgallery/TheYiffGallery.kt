@@ -3,8 +3,8 @@ package eu.kanade.tachiyomi.extension.en.theyiffgallery
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
-import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SChapter
+import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.annotation.Source
@@ -15,7 +15,7 @@ import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
 @Source
-abstract class TheyYiffGallery : KeiSource() {
+abstract class TheYiffGallery : KeiSource() {
 
     private val comicsCategoryId = 1661
 
@@ -62,29 +62,27 @@ abstract class TheyYiffGallery : KeiSource() {
         )
     }
 
-    private fun comicsRootUrl(): String =
-        "$baseUrl/index?/category/$comicsCategoryId"
+    private fun comicsRootUrl(): String = "$baseUrl/index?/category/$comicsCategoryId"
 
     private fun parseCategoryChildren(
         document: org.jsoup.nodes.Document,
-    ): List<SManga> =
-        document
-            .select("""a[href*="index?/category/"] img.category.thumbnail""")
-            .mapNotNull { image ->
-                val href = image.parent()?.absUrl("href").orEmpty()
-                val title = image.attr("alt")
-                    .ifBlank { image.attr("title") }
-                    .trim()
+    ): List<SManga> = document
+        .select("""a[href*="index?/category/"] img.category.thumbnail""")
+        .mapNotNull { image ->
+            val href = image.parent()?.absUrl("href").orEmpty()
+            val title = image.attr("alt")
+                .ifBlank { image.attr("title") }
+                .trim()
 
-                if (href.isBlank() || title.isBlank()) return@mapNotNull null
+            if (href.isBlank() || title.isBlank()) return@mapNotNull null
 
-                SManga.create().apply {
-                    setUrlWithoutDomain(href)
-                    this.title = title
-                    thumbnail_url = image.absUrl("src")
-                }
+            SManga.create().apply {
+                setUrlWithoutDomain(href)
+                this.title = title
+                thumbnail_url = image.absUrl("src")
             }
-            .distinctBy { it.url }
+        }
+        .distinctBy { it.url }
 
     // ---------------------------------------------------------------
     // SEARCH
@@ -254,7 +252,5 @@ abstract class TheyYiffGallery : KeiSource() {
         }
     }
 
-    private fun String.encodeUrlParameter(): String =
-        java.net.URLEncoder.encode(this, Charsets.UTF_8.name())
+    private fun String.encodeUrlParameter(): String = java.net.URLEncoder.encode(this, Charsets.UTF_8.name())
 }
-
