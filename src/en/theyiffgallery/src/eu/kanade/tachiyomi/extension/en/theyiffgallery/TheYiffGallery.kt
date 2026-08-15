@@ -51,17 +51,14 @@ abstract class TheYiffGallery : KeiSource() {
     )
 
     override suspend fun getPopularManga(page: Int): MangasPage {
-        val yearEntry = yearCategories.getOrNull(page - 1)
-            ?: return MangasPage(emptyList(), false)
+        if (page != 1) return MangasPage(emptyList(), false)
 
-        val mangas = client.get("$baseUrl/index?%2Fcategory%2F${yearEntry.second}=").use { response ->
-            parseCategoryChildren(response.asJsoup())
+        val manga = SManga.create().apply {
+            url = "/index?/category/9980"
+            title = "The Recital"
         }
 
-        return MangasPage(
-            mangas = mangas,
-            hasNextPage = page < yearCategories.size,
-        )
+        return MangasPage(listOf(manga), false)
     }
 
     private fun parseCategoryChildren(
