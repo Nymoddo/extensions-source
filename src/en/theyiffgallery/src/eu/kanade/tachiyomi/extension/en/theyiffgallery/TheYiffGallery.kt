@@ -211,13 +211,12 @@ abstract class TheYiffGallery : KeiSource() {
     // pages. Each picture? page contains #theMainImage.
     // ---------------------------------------------------------------
 
-    override suspend fun getPageList(chapter: SChapter): List<Page> =
-        listOf(
-            Page(
-                index = 0,
-                imageUrl = "$baseUrl/_data/i/upload/2015/07/30/20150730210107-4edfadaa-xx.png",
-            ),
-        )
+    override suspend fun getPageList(chapter: SChapter): List<Page> = listOf(
+        Page(
+            index = 0,
+            imageUrl = "$baseUrl/_data/i/upload/2015/07/30/20150730210107-4edfadaa-xx.png",
+        ),
+    )
 
     private fun String.encodeUrlParameter(): String = java.net.URLEncoder.encode(this, Charsets.UTF_8.name())
 }
