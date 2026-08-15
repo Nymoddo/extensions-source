@@ -55,7 +55,7 @@ abstract class TheYiffGallery : KeiSource() {
 
         val manga = SManga.create().apply {
             url = "/index?/category/9980"
-            title = "The Recital [V8]"
+            title = "The Recital [V9]"
         }
 
         return MangasPage(listOf(manga), false)
@@ -166,8 +166,8 @@ abstract class TheYiffGallery : KeiSource() {
         manga.status = SManga.UNKNOWN
 
         val diagnosticChapter = SChapter.create().apply {
-            url = "/index?/category/9980#v8"
-            name = "Principal [V8 DYNAMIC]"
+            url = "/index?/category/9980#v9"
+            name = "Principal [V9 THUMBNAILS]"
             chapter_number = 0f
         }
 
@@ -219,32 +219,22 @@ abstract class TheYiffGallery : KeiSource() {
     // pages. Each picture? page contains #theMainImage.
     // ---------------------------------------------------------------
 
-    override suspend fun getPageList(chapter: SChapter): List<Page> {
-        val pictureUrls = client.get(getChapterUrl(chapter)).use { response ->
+    override suspend fun getPageList(chapter: SChapter): List<Page> =
+        client.get(getChapterUrl(chapter)).use { response ->
             response.asJsoup()
-                .select("a[href]")
-                .mapNotNull { link ->
-                    val href = link.attr("href").trim()
-                    if (!href.startsWith("picture?")) return@mapNotNull null
-                    absoluteSiteUrl(href)
-                }
-                .distinct()
-        }
+                .select("img.thumbnail:not(.category)")
+                .mapIndexedNotNull { index, image ->
+                    val thumbnailUrl = image.absUrl("src")
+                    if (thumbnailUrl.isBlank()) return@mapIndexedNotNull null
 
-        return pictureUrls.mapIndexedNotNull { index, pictureUrl ->
-            runCatching {
-                client.get(pictureUrl).use { response ->
-                    val image = response.asJsoup().selectFirst("#theMainImage")
-                        ?: return@use null
-
-                    val imageUrl = image.absUrl("src")
-                    if (imageUrl.isBlank()) return@use null
+                    val imageUrl = thumbnailUrl.replace(
+                        Regex("""-cu_[^.]+(?=\.[^.]+$)"""),
+                        "-xx",
+                    )
 
                     Page(index, imageUrl = imageUrl)
                 }
-            }.getOrNull()
         }
-    }
 
     private fun String.encodeUrlParameter(): String = java.net.URLEncoder.encode(this, Charsets.UTF_8.name())
 }
