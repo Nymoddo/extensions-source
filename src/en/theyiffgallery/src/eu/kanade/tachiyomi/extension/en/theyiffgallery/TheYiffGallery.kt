@@ -6,7 +6,6 @@ import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
-import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.annotation.Source
 import keiyoushi.network.get
 import keiyoushi.source.KeiSource
@@ -22,18 +21,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 @Source
 abstract class TheYiffGallery : KeiSource() {
 
-    private val comicsCategoryId = 1661
-
     override val supportsLatest = false
-
-    override suspend fun getLatestUpdates(page: Int): MangasPage = MangasPage(emptyList(), false)
-
-    // ---------------------------------------------------------------
-    // BROWSE
-    //
-    // The website groups comics by year. One Mihon page maps to one
-    // year category, newest first.
-    // ---------------------------------------------------------------
 
     private val yearCategories = listOf(
         2026 to 9708,
@@ -55,112 +43,78 @@ abstract class TheYiffGallery : KeiSource() {
         2010 to 2119,
     )
 
+    private val yearCategoryIds = yearCategories.map { it.second }.toSet()
+
+    override suspend fun getLatestUpdates(page: Int): MangasPage = MangasPage(emptyList(), false)
+
+    // ============================== Browse ==============================
+
     override suspend fun getPopularManga(page: Int): MangasPage {
-        if (page != 1) return MangasPage(emptyList(), false)
+        val year = yearCategories.getOrNull(page - 1)
+            ?: return MangasPage(emptyList(), false)
 
-        val manga = SManga.create().apply {
-            url = "/index?/category/9980"
-            title = "The Recital [V12 PIWIGO API]"
-        }
+        val mangas = getCategories(year.second)
+            .filter { it.id != year.second && it.parentId == year.second }
+            .map { it.toSManga() }
 
-        return MangasPage(listOf(manga), false)
+        return MangasPage(
+            mangas = mangas,
+            hasNextPage = page < yearCategories.size,
+        )
     }
 
-    private fun parseCategoryChildren(
-        document: org.jsoup.nodes.Document,
-    ): List<SManga> = document
-        .select("img.category.thumbnail")
-        .mapNotNull { image ->
-            val link = image.parent()
-            if (link?.tagName() != "a") return@mapNotNull null
-
-            val href = link.attr("href").trim()
-            val title = image.attr("alt")
-                .ifBlank { image.attr("title") }
-                .trim()
-
-            if (href.isBlank() || title.isBlank()) return@mapNotNull null
-
-            SManga.create().apply {
-                setUrlWithoutDomain(href)
-                this.title = title
-                thumbnail_url = image.absUrl("src")
-            }
-        }
-        .distinctBy { it.url }
-
-    // ---------------------------------------------------------------
-    // SEARCH
-    //
-    // The site's quick-search endpoint is qsearch.php?q=...
-    // Its autocomplete results point directly to /index?/category/ID.
-    // ---------------------------------------------------------------
+    // ============================== Search ==============================
 
     override suspend fun getSearchMangaList(
         page: Int,
         query: String,
         filters: FilterList,
     ): MangasPage {
-        if (query.isBlank()) return MangasPage(emptyList(), false)
+        if (page != 1 || query.isBlank()) return MangasPage(emptyList(), false)
 
-        val mangas = client.get(
-            "$baseUrl/qsearch.php?q=${query.encodeUrlParameter()}",
-        ).use { response ->
-            response.asJsoup()
-                .select("""ul.ui-autocomplete a, a[href*="/category/"]""")
-                .mapNotNull { link ->
-                    val href = link.attr("href").trim()
-                    val title = link.text().trim()
+        val normalizedQuery = query.trim()
 
-                    if (href.isBlank() || title.isBlank()) return@mapNotNull null
-
-                    SManga.create().apply {
-                        setUrlWithoutDomain(href)
-                        this.title = title
-                    }
-                }
-                .distinctBy { it.url }
-        }
+        val mangas = yearCategories
+            .flatMap { (_, categoryId) ->
+                getCategories(categoryId)
+                    .filter { it.id != categoryId && it.parentId == categoryId }
+            }
+            .distinctBy { it.id }
+            .filter { it.name.contains(normalizedQuery, ignoreCase = true) }
+            .map { it.toSManga() }
 
         return MangasPage(mangas, false)
     }
 
     override fun getFilterList(data: JsonElement?): FilterList = FilterList()
 
-    // ---------------------------------------------------------------
-    // URL SEARCH / DEEPLINKS
-    // ---------------------------------------------------------------
+    // ============================== URLs ==============================
+
+    override fun getMangaUrl(manga: SManga): String {
+        val categoryId = manga.url.categoryId()
+        return "$baseUrl/index?/category/$categoryId"
+    }
+
+    override fun getChapterUrl(chapter: SChapter): String {
+        val categoryId = chapter.url.categoryId()
+        return "$baseUrl/index?/category/$categoryId"
+    }
 
     override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
         if (url.host != baseUrl.toHttpUrl().host) return null
-        if (url.encodedPath != "/index") return null
 
-        val query = url.encodedQuery ?: return null
-        if (!query.startsWith("/category/")) return null
+        val categoryId = url.toString().categoryIdOrNull()
+            ?: return null
 
-        return SManga.create().apply {
-            this.url = "/index?$query"
-            title = "Unknown"
-        }
+        val category = getCategory(categoryId)
+            ?: return null
+
+        if (category.parentId !in yearCategoryIds) return null
+
+        return category.toSManga()
     }
 
-    override fun getMangaUrl(manga: SManga): String = absoluteSiteUrl(manga.url)
-
-    override fun getChapterUrl(chapter: SChapter): String = absoluteSiteUrl(chapter.url)
-
-    private fun absoluteSiteUrl(url: String): String = if (url.startsWith("http")) {
-        url
-    } else {
-        "$baseUrl/${url.trimStart('/')}"
-    }
-
-    // ---------------------------------------------------------------
-    // DETAILS + CHAPTERS
-    //
-    // A comic itself is a category.
-    // Direct images = virtual "Principal" chapter.
-    // Nested categories = separate chapters.
-    // ---------------------------------------------------------------
+    // ============================== Details ==============================
 
     override suspend fun fetchMangaUpdate(
         manga: SManga,
@@ -168,71 +122,66 @@ abstract class TheYiffGallery : KeiSource() {
         fetchDetails: Boolean,
         fetchChapters: Boolean,
     ): SMangaUpdate {
-        val imageUrls = getCategoryImageUrls(9980)
+        val mangaCategoryId = manga.url.categoryId()
 
-        manga.status = SManga.UNKNOWN
-        manga.description = "V12 Piwigo API diagnostic\nImages: ${imageUrls.size}"
-
-        val diagnosticChapter = SChapter.create().apply {
-            url = "/index?/category/9980#v12"
-            name = "Principal [V12 API] images=${imageUrls.size}"
-            chapter_number = 0f
+        val category = getCategory(mangaCategoryId)
+        if (fetchDetails && category != null) {
+            manga.title = category.name
+            manga.thumbnail_url = category.thumbnailUrl
+            manga.status = SManga.UNKNOWN
         }
 
-        return SMangaUpdate(manga, listOf(diagnosticChapter))
+        val updatedChapters = if (fetchChapters || chapters.isEmpty()) {
+            getChapterList(mangaCategoryId)
+        } else {
+            chapters
+        }
+
+        return SMangaUpdate(manga, updatedChapters)
     }
 
-    private fun parseChapters(
-        document: org.jsoup.nodes.Document,
-        mangaUrl: String,
-    ): List<SChapter> {
+    private suspend fun getChapterList(mangaCategoryId: Int): List<SChapter> {
         val result = mutableListOf<SChapter>()
 
-        if (document.select("img.thumbnail:not(.category)").isNotEmpty()) {
+        val directImages = getCategoryImageUrls(mangaCategoryId)
+        if (directImages.isNotEmpty()) {
             result += SChapter.create().apply {
-                url = mangaUrl
+                url = "/index?/category/$mangaCategoryId"
                 name = "Principal"
                 chapter_number = 0f
             }
         }
 
-        document
-            .select("img.category.thumbnail")
-            .forEach { image ->
-                val link = image.parent()
-                if (link?.tagName() != "a") return@forEach
+        val subcategories = getCategories(mangaCategoryId)
+            .filter { it.id != mangaCategoryId }
+            .filter { it.nbImages == null || it.nbImages > 0 }
 
-                val href = link.attr("href").trim()
-                if (href.isBlank()) return@forEach
-
-                val name = image.attr("alt")
-                    .ifBlank { image.attr("title") }
-                    .trim()
-                    .ifBlank { "Subcategory" }
-
-                result += SChapter.create().apply {
-                    setUrlWithoutDomain(href)
-                    this.name = name
-                    chapter_number = result.size.toFloat()
-                }
+        subcategories.forEach { category ->
+            result += SChapter.create().apply {
+                url = "/index?/category/${category.id}"
+                name = category.name
+                chapter_number = result.size.toFloat()
             }
+        }
 
         return result.reversed()
     }
 
-    // ---------------------------------------------------------------
-    // PAGES
-    //
-    // A chapter URL is a category. Its thumbnails point to picture?
-    // pages. Each picture? page contains #theMainImage.
-    // ---------------------------------------------------------------
+    // ============================== Pages ==============================
 
-    override suspend fun getPageList(chapter: SChapter): List<Page> = getCategoryImageUrls(9980).mapIndexed { index, imageUrl ->
-        Page(index, imageUrl = imageUrl)
+    override suspend fun getPageList(chapter: SChapter): List<Page> {
+        val categoryId = chapter.url.categoryId()
+
+        return getCategoryImageUrls(categoryId).mapIndexed { index, imageUrl ->
+            Page(index, imageUrl = imageUrl)
+        }
     }
 
     private suspend fun getCategoryImageUrls(categoryId: Int): List<String> {
-        val url = "$baseUrl/ws.php?format=json&method=pwg.categories.getImages&cat_id=$categoryId&per_page=500&page=0"
+        val url = apiUrl(
+            method = "pwg.categories.getImages",
+            extra = "&cat_id=$categoryId&per_page=500&page=0",
+        )
 
         return client.get(url).use { response ->
             val root = Json.parseToJsonElement(response.body.string()).jsonObject
@@ -258,5 +207,107 @@ abstract class TheYiffGallery : KeiSource() {
         }
     }
 
-    private fun String.encodeUrlParameter(): String = java.net.URLEncoder.encode(this, Charsets.UTF_8.name())
+    // ============================== Categories ==============================
+
+    private suspend fun getCategory(categoryId: Int): PiwigoCategory? =
+        getCategories(categoryId).firstOrNull { it.id == categoryId }
+
+    private suspend fun getCategories(categoryId: Int): List<PiwigoCategory> {
+        val url = apiUrl(
+            method = "pwg.categories.getList",
+            extra = "&cat_id=$categoryId&recursive=true&thumbnail_size=medium",
+        )
+
+        return client.get(url).use { response ->
+            val root = Json.parseToJsonElement(response.body.string()).jsonObject
+            val result = root["result"] ?: return@use emptyList()
+            val categories = result.jsonObject["categories"]?.jsonArray
+                ?: return@use emptyList()
+
+            categories.mapNotNull { element ->
+                val category = element.jsonObject
+                val id = category["id"]
+                    ?.jsonPrimitive
+                    ?.contentOrNull
+                    ?.toIntOrNull()
+                    ?: return@mapNotNull null
+
+                val name = category["name"]
+                    ?.jsonPrimitive
+                    ?.contentOrNull
+                    ?.trim()
+                    .orEmpty()
+
+                if (name.isBlank()) return@mapNotNull null
+
+                val uppercats = category["uppercats"]
+                    ?.jsonPrimitive
+                    ?.contentOrNull
+                    ?.split(',')
+                    ?.mapNotNull { it.trim().toIntOrNull() }
+                    .orEmpty()
+
+                val explicitParent = category["id_uppercat"]
+                    ?.jsonPrimitive
+                    ?.contentOrNull
+                    ?.toIntOrNull()
+
+                val parentId = explicitParent
+                    ?: uppercats
+                        .takeIf { it.size >= 2 }
+                        ?.get(uppercats.lastIndex - 1)
+
+                val thumbnailUrl = category["tn_url"]
+                    ?.jsonPrimitive
+                    ?.contentOrNull
+                    ?.takeIf { it.isNotBlank() }
+
+                val nbImages = category["nb_images"]
+                    ?.jsonPrimitive
+                    ?.contentOrNull
+                    ?.toIntOrNull()
+
+                PiwigoCategory(
+                    id = id,
+                    name = name,
+                    parentId = parentId,
+                    thumbnailUrl = thumbnailUrl,
+                    nbImages = nbImages,
+                )
+            }
+        }
+    }
+
+    private fun PiwigoCategory.toSManga(): SManga = SManga.create().apply {
+        url = "/index?/category/${this@toSManga.id}"
+        title = this@toSManga.name
+        thumbnail_url = this@toSManga.thumbnailUrl
+    }
+
+    private fun apiUrl(method: String, extra: String = ""): String =
+        "$baseUrl/ws.php?format=json&method=$method$extra"
+
+    private fun String.categoryId(): Int =
+        categoryIdOrNull() ?: throw IllegalArgumentException("Missing category ID in URL: $this")
+
+    private fun String.categoryIdOrNull(): Int? {
+        val decoded = runCatching {
+            java.net.URLDecoder.decode(this, Charsets.UTF_8.name())
+        }.getOrDefault(this)
+
+        return CATEGORY_ID_REGEX.find(decoded)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toIntOrNull()
+    }
 }
+
+private data class PiwigoCategory(
+    val id: Int,
+    val name: String,
+    val parentId: Int?,
+    val thumbnailUrl: String?,
+    val nbImages: Int?,
+)
+
+private val CATEGORY_ID_REGEX = Regex("""category/(\d+)""")
