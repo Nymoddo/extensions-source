@@ -26,57 +26,59 @@ abstract class TheYiffGallery : KeiSource() {
     // ---------------------------------------------------------------
     // BROWSE
     //
-    // /index?/category/1661 contains the year categories.
-    // We discover the year IDs from the root page instead of hardcoding
-    // them, so adding a new year does not require a source update.
+    // The website groups comics by year. One Mihon page maps to one
+    // year category, newest first.
     // ---------------------------------------------------------------
 
+    private val yearCategories = listOf(
+        2026 to 9708,
+        2025 to 9268,
+        2024 to 8771,
+        2023 to 8131,
+        2022 to 7556,
+        2021 to 7093,
+        2020 to 6433,
+        2019 to 5810,
+        2018 to 5136,
+        2017 to 4378,
+        2016 to 3618,
+        2015 to 2415,
+        2014 to 2579,
+        2013 to 2291,
+        2012 to 1662,
+        2011 to 1780,
+        2010 to 2119,
+    )
+
     override suspend fun getPopularManga(page: Int): MangasPage {
-        val years = client.get(comicsRootUrl()).use { response ->
-            response.asJsoup()
-                .select("""a[href*="index?/category/"] img.category.thumbnail""")
-                .mapNotNull { image ->
-                    val year = image.attr("alt").trim().toIntOrNull()
-                        ?: image.attr("title").trim().toIntOrNull()
-                        ?: return@mapNotNull null
-
-                    if (year !in 2010..2100) return@mapNotNull null
-
-                    val href = image.parent()?.absUrl("href").orEmpty()
-                    if (href.isBlank()) return@mapNotNull null
-
-                    year to href
-                }
-                .distinctBy { it.first }
-                .sortedByDescending { it.first }
-        }
-
-        val yearEntry = years.getOrNull(page - 1)
+        val yearEntry = yearCategories.getOrNull(page - 1)
             ?: return MangasPage(emptyList(), false)
 
-        val mangas = client.get(yearEntry.second).use { response ->
+        val mangas = client.get("$baseUrl/index?/category/${yearEntry.second}").use { response ->
             parseCategoryChildren(response.asJsoup())
         }
 
         return MangasPage(
             mangas = mangas,
-            hasNextPage = page < years.size,
+            hasNextPage = page < yearCategories.size,
         )
     }
-
-    private fun comicsRootUrl(): String = "$baseUrl/index?/category/$comicsCategoryId"
 
     private fun parseCategoryChildren(
         document: org.jsoup.nodes.Document,
     ): List<SManga> = document
-        .select("""a[href*="index?/category/"] img.category.thumbnail""")
+        .select("img.category.thumbnail")
         .mapNotNull { image ->
-            val href = image.parent()?.absUrl("href").orEmpty()
+            val link = image.parent()
+            if (link?.tagName() != "a") return@mapNotNull null
+
+            val href = link.absUrl("href")
             val title = image.attr("alt")
                 .ifBlank { image.attr("title") }
                 .trim()
 
             if (href.isBlank() || title.isBlank()) return@mapNotNull null
+            if (!href.contains("/category/")) return@mapNotNull null
 
             SManga.create().apply {
                 setUrlWithoutDomain(href)
@@ -104,7 +106,7 @@ abstract class TheYiffGallery : KeiSource() {
             "$baseUrl/qsearch.php?q=${query.encodeUrlParameter()}",
         ).use { response ->
             response.asJsoup()
-                .select("""a[href*="index?/category/"]""")
+                .select("""ul.ui-autocomplete a, a[href*="/category/"]""")
                 .mapNotNull { link ->
                     val href = link.absUrl("href")
                     val title = link.text().trim()
@@ -187,9 +189,7 @@ abstract class TheYiffGallery : KeiSource() {
         val result = mutableListOf<SChapter>()
 
         if (
-            document.select(
-                """a[href*="picture?"] img.thumbnail:not(.category)""",
-            ).isNotEmpty()
+            document.select("img.thumbnail:not(.category)").isNotEmpty()
         ) {
             result += SChapter.create().apply {
                 url = mangaUrl
@@ -199,7 +199,7 @@ abstract class TheYiffGallery : KeiSource() {
         }
 
         document
-            .select("""a[href*="index?/category/"] img.category.thumbnail""")
+            .select("img.category.thumbnail")
             .forEach { image ->
                 val href = image.parent()?.absUrl("href").orEmpty()
                 if (href.isBlank()) return@forEach
@@ -233,8 +233,12 @@ abstract class TheYiffGallery : KeiSource() {
             val document = response.asJsoup()
 
             val pictureUrls = document
-                .select("""a[href*="picture?"]""")
-                .mapNotNull { it.absUrl("href").takeIf(String::isNotBlank) }
+                .select("img.thumbnail:not(.category)")
+                .mapNotNull { image ->
+                    val link = image.parent()
+                    if (link?.tagName() != "a") return@mapNotNull null
+                    link.absUrl("href").takeIf { it.contains("picture?") }
+                }
                 .distinct()
 
             pictureUrls.mapIndexedNotNull { index, pictureUrl ->
