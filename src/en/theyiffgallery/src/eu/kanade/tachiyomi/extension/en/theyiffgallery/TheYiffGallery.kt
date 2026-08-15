@@ -139,6 +139,13 @@ abstract class TheYiffGallery : KeiSource() {
         }
     }
 
+    override fun getMangaUrl(manga: SManga): String = absoluteSiteUrl(manga.url)
+
+    override fun getChapterUrl(chapter: SChapter): String = absoluteSiteUrl(chapter.url)
+
+    private fun absoluteSiteUrl(url: String): String =
+        if (url.startsWith("http")) url else "$baseUrl/${url.trimStart('/')}"
+
     // ---------------------------------------------------------------
     // DETAILS + CHAPTERS
     //
@@ -211,12 +218,32 @@ abstract class TheYiffGallery : KeiSource() {
     // pages. Each picture? page contains #theMainImage.
     // ---------------------------------------------------------------
 
-    override suspend fun getPageList(chapter: SChapter): List<Page> = listOf(
-        Page(
-            index = 0,
-            imageUrl = "$baseUrl/_data/i/upload/2015/07/30/20150730210107-4edfadaa-xx.png",
-        ),
-    )
+    override suspend fun getPageList(chapter: SChapter): List<Page> {
+        val pictureUrls = client.get(getChapterUrl(chapter)).use { response ->
+            response.asJsoup()
+                .select("a[href]")
+                .mapNotNull { link ->
+                    val href = link.attr("href").trim()
+                    if (!href.startsWith("picture?")) return@mapNotNull null
+                    absoluteSiteUrl(href)
+                }
+                .distinct()
+        }
+
+        return pictureUrls.mapIndexedNotNull { index, pictureUrl ->
+            runCatching {
+                client.get(pictureUrl).use { response ->
+                    val image = response.asJsoup().selectFirst("#theMainImage")
+                        ?: return@use null
+
+                    val imageUrl = image.absUrl("src")
+                    if (imageUrl.isBlank()) return@use null
+
+                    Page(index, imageUrl = imageUrl)
+                }
+            }.getOrNull()
+        }
+    }
 
     private fun String.encodeUrlParameter(): String = java.net.URLEncoder.encode(this, Charsets.UTF_8.name())
 }
