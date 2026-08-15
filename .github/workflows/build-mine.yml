@@ -1,0 +1,32 @@
+name: Build my extension
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Build extension
+        # >>> CAMBIAR: reemplaza <lang> y <tuExtension> por los tuyos,
+        # ej: :src:en:comicssiteexample:assembleDebug
+        run: ./gradlew :src:en:theyiffgallery:assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mi-extension-apk
+          # >>> CAMBIAR: misma ruta que arriba
+          path: src/en/theyiffgallery/build/outputs/apk/**/*.apk
