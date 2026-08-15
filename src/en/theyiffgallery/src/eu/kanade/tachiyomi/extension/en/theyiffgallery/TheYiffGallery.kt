@@ -54,7 +54,7 @@ abstract class TheYiffGallery : KeiSource() {
         val yearEntry = yearCategories.getOrNull(page - 1)
             ?: return MangasPage(emptyList(), false)
 
-        val mangas = client.get("$baseUrl/index?/category/${yearEntry.second}").use { response ->
+        val mangas = client.get("$baseUrl/index?%2Fcategory%2F${yearEntry.second}=").use { response ->
             parseCategoryChildren(response.asJsoup())
         }
 
@@ -72,13 +72,12 @@ abstract class TheYiffGallery : KeiSource() {
             val link = image.parent()
             if (link?.tagName() != "a") return@mapNotNull null
 
-            val href = link.absUrl("href")
+            val href = link.attr("href").trim()
             val title = image.attr("alt")
                 .ifBlank { image.attr("title") }
                 .trim()
 
             if (href.isBlank() || title.isBlank()) return@mapNotNull null
-            if (!href.contains("/category/")) return@mapNotNull null
 
             SManga.create().apply {
                 setUrlWithoutDomain(href)
@@ -108,7 +107,7 @@ abstract class TheYiffGallery : KeiSource() {
             response.asJsoup()
                 .select("""ul.ui-autocomplete a, a[href*="/category/"]""")
                 .mapNotNull { link ->
-                    val href = link.absUrl("href")
+                    val href = link.attr("href").trim()
                     val title = link.text().trim()
 
                     if (href.isBlank() || title.isBlank()) return@mapNotNull null
@@ -201,7 +200,10 @@ abstract class TheYiffGallery : KeiSource() {
         document
             .select("img.category.thumbnail")
             .forEach { image ->
-                val href = image.parent()?.absUrl("href").orEmpty()
+                val link = image.parent()
+                if (link?.tagName() != "a") return@forEach
+
+                val href = link.attr("href").trim()
                 if (href.isBlank()) return@forEach
 
                 val name = image.attr("alt")
@@ -237,7 +239,11 @@ abstract class TheYiffGallery : KeiSource() {
                 .mapNotNull { image ->
                     val link = image.parent()
                     if (link?.tagName() != "a") return@mapNotNull null
-                    link.absUrl("href").takeIf { it.contains("picture?") }
+
+                    val href = link.attr("href").trim()
+                    if (!href.contains("picture?")) return@mapNotNull null
+
+                    if (href.startsWith("http")) href else "$baseUrl/${href.trimStart('/')}"
                 }
                 .distinct()
 
