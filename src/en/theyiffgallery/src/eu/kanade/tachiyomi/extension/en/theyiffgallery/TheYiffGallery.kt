@@ -21,6 +21,9 @@ abstract class TheYiffGallery : KeiSource() {
 
     override val supportsLatest = false
 
+    override suspend fun getLatestUpdates(page: Int): MangasPage =
+        MangasPage(emptyList(), false)
+
     // ---------------------------------------------------------------
     // BROWSE
     //
