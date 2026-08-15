@@ -6,7 +6,7 @@ plugins {
 
 keiyoushi {
     name = "TheYiffGallery"
-    versionCode = 1.2.5
+    versionCode = 3
     contentWarning = ContentWarning.NSFW
     libVersion = "1.6"
 
