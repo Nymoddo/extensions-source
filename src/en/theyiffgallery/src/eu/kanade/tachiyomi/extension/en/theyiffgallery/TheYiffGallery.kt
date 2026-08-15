@@ -143,8 +143,11 @@ abstract class TheYiffGallery : KeiSource() {
 
     override fun getChapterUrl(chapter: SChapter): String = absoluteSiteUrl(chapter.url)
 
-    private fun absoluteSiteUrl(url: String): String =
-        if (url.startsWith("http")) url else "$baseUrl/${url.trimStart('/')}"
+    private fun absoluteSiteUrl(url: String): String = if (url.startsWith("http")) {
+        url
+    } else {
+        "$baseUrl/${url.trimStart('/')}"
+    }
 
     // ---------------------------------------------------------------
     // DETAILS + CHAPTERS
@@ -177,9 +180,7 @@ abstract class TheYiffGallery : KeiSource() {
     ): List<SChapter> {
         val result = mutableListOf<SChapter>()
 
-        if (
-            document.select("img.thumbnail:not(.category)").isNotEmpty()
-        ) {
+        if (document.select("img.thumbnail:not(.category)").isNotEmpty()) {
             result += SChapter.create().apply {
                 url = mangaUrl
                 name = "Principal"
